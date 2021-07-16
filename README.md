@@ -5,6 +5,3 @@
 
 ## Examples
 <img src="" width="190px">
-
-## Reference
-+ [[Unity] git lfs](https://morm.tistory.com/246)
