@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Collections;
 using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 
 public class GameController : MonoBehaviour
@@ -10,12 +12,6 @@ public class GameController : MonoBehaviour
     [Header("Start Options")]
     [SerializeField]
     private GameObject   PersonPrefab;      // Person 프리팹
-    [SerializeField]
-    private int          redCount   = 40;   // 시작시 Red 수
-    [SerializeField]
-    private int          blueCount  = 40;   // 시작시 Blue 수
-    [SerializeField]
-    private int          greenCount = 40;   // 시작시 Green 수
 
     [Header("Game Options")]
     [SerializeField]
@@ -30,20 +26,49 @@ public class GameController : MonoBehaviour
     private TextMeshProUGUI textBlueCnt;
     [SerializeField]
     private TextMeshProUGUI textGreenCnt;
-
-    private void Awake()
-    {
-        Vector3 redPos   = new Vector3(9, 0.2f, 4);
-        Vector3 bluePos  = new Vector3(-9, 0.2f, -4);
-        Vector3 greenPos = new Vector3(-9, 0.2f, 4);
-        SpawnPerson(redPos, PersonType.Red, redCount);
-        SpawnPerson(bluePos, PersonType.Blue, blueCount);
-        SpawnPerson(greenPos, PersonType.Green, greenCount);
-    }
+    [SerializeField]
+    private GameObject followPrefab;    // 마우스를 따라다니는 임시 객체를 위한 프리팹
+    private PersonType personType;      // 생성할 PersonType
+    private bool       isOnButton;      // Button 활성화 여부
+    private GameObject followClone;     // 마우스를 따라다니는 임시 객체
+    [SerializeField]
+    private Scrollbar  scrollbarRed;
+    [SerializeField]
+    private Scrollbar  scrollbarBlue;
+    [SerializeField]
+    private Scrollbar  scrollbarGreen;
 
     private void Start()
     {
         StartCoroutine("Affect");
+    }
+
+    private void Update()
+    {
+        // 마우스가 UI에 머물러 있을 때는 아래 코드가 실행되지 않도록 함
+        if ( EventSystem.current.IsPointerOverGameObject() == true ) { return; }
+
+        // 마우스 왼쪽 버튼을 눌렀을 때
+        if ( Input.GetMouseButtonDown(0) )
+        {
+            int spawnCount = 10;
+            
+            switch ( personType )
+            {
+                case PersonType.Red:
+                    spawnCount = Mathf.Max(spawnCount, (int)(100 * scrollbarRed.value));
+                    break;
+                case PersonType.Blue:
+                    spawnCount = Mathf.Max(spawnCount, (int)(100 * scrollbarBlue.value));
+                    break;
+                case PersonType.Green:
+                    spawnCount = Mathf.Max(spawnCount, (int)(100 * scrollbarGreen.value));
+                    break;
+            }
+
+            // Follow 임시 객체 위치에 Spawn
+            if ( followClone ) { TrySpawn(followClone.transform.position, spawnCount); }
+        }
     }
 
     private IEnumerator Affect()
@@ -58,7 +83,6 @@ public class GameController : MonoBehaviour
         int redCnt   = 0;
         int blueCnt  = 0;
         int greenCnt = 0;
-        int result   = 0;
 
         while ( true )
         {
@@ -71,12 +95,6 @@ public class GameController : MonoBehaviour
                 else if (people[i].PersonType == PersonType.Blue)  { blues.Add(people[i]); }
                 else if (people[i].PersonType == PersonType.Green) { greens.Add(people[i]); }
             }
-
-            // 한 PersonType만 남았다면
-            result += (reds.Count == 0) ? 1 : 0;
-            result += (blues.Count == 0) ? 1 : 0;
-            result += (greens.Count == 0) ? 1 : 0;
-            if ( result == 1 ) { Finish(); }
 
             // 각각의 PersonType 평균위치 계산
             redPos   = Vector3.zero;
@@ -144,18 +162,8 @@ public class GameController : MonoBehaviour
             redCnt   = 0;
             blueCnt  = 0;
             greenCnt = 0;
-            result   = 0;
 
             yield return new WaitForSeconds(affectTerm);
-        }
-    }
-
-    private void SpawnPerson(Vector3 position, PersonType personType, int count)
-    {
-        for ( int i=0; i<count; ++i )
-        {
-            GameObject clone = Instantiate(PersonPrefab, position, Quaternion.identity);
-            clone.GetComponent<Person>().PersonType = personType;
         }
     }
 
@@ -168,5 +176,65 @@ public class GameController : MonoBehaviour
         foreach ( Person person in people ) { person.Stop(); }
 
         print("Finish");
+    }
+
+    private void SpawnPerson(Vector3 position, PersonType personType, int count)
+    {
+        for ( int i=0; i<count; ++i )
+        {
+            GameObject clone = Instantiate(PersonPrefab, position, Quaternion.identity);
+            clone.GetComponent<Person>().PersonType = personType;
+        }
+    }
+
+    private void TrySpawn(Vector3 position, int count)
+    {
+        // isOnButton이 true일 경우에만 실행
+        if (isOnButton == true)
+        {
+            SpawnPerson(position, personType, count);
+        }
+    }
+
+    private IEnumerator CancelSpawn()
+    {
+        while ( true )
+        {
+            // ESC키 또는 마우스 오른쪽 버튼을 눌렀을 때 타워 건설 취소
+            if ( Input.GetKeyDown(KeyCode.Escape) || Input.GetMouseButtonDown(1) )
+            {
+                isOnButton = false;
+                // 마우스를 따라다니는 임시 타워 삭제
+                Destroy(followClone);
+                break;
+            }
+
+            yield return null;
+        }
+    }
+
+    public void ReadyToSpawn(int personType)
+    {
+        this.personType = (PersonType)personType;
+
+        isOnButton = true;
+        // 마우스를 따라다니는 임시 객체 생성
+
+        if ( !followClone ) { followClone = Instantiate(followPrefab); }
+        switch ( this.personType )
+        {
+            case PersonType.Red:
+                followClone.GetComponent<SpriteRenderer>().color = Color.red;
+                break;
+            case PersonType.Blue:
+                followClone.GetComponent<SpriteRenderer>().color = Color.blue;
+                break;
+            case PersonType.Green:
+                followClone.GetComponent<SpriteRenderer>().color = Color.green;
+                break;
+        }
+        
+        // Spawn 취소를 위한 코루틴 실행
+        StartCoroutine("CancelSpawn");
     }
 }
